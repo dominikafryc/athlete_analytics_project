@@ -16,6 +16,7 @@ from sklearn.metrics import silhouette_score
 import joblib
 from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
+import json
 
 def load_all_datasets(data_dir='.', sep=';', decimal=','):
     csv_files = {
@@ -136,40 +137,85 @@ logging.info(f"KNN Imputation completed. Remaining NULL values: {df_merged[valid
 df_merged['Daily_HRV'] = df_merged['Daily_HRV'].fillna(df_merged['Daily_HRV'].mean())
 df_merged['Sleep_Duration'] = df_merged['Sleep_Duration'].fillna(7.0)
 
-# API weather and google calendar
-url = 'https://api.open-meteo.com/v1/forecast'
+#UPDATE: API weather: precise coordinates, capital fallback
+def fetch_weather_with_capital_fallback(df_merged):
+    try:
+        ip_info = requests.get('http://ip-api.com/json/', timeout=3).json()
+        exact_lat, exact_lon = ip_info['lat'], ip_info['lon']
+        country_code = ip_info['countryCode']
 
-user_lat = df_merged.get('Latitude', 52.2297)
-user_lon = df_merged.get('Longitude', 21.0122)
+        #capital coordinates
+        try:
+            country_info = requests.get(f'https://restcountries.com/v3.1/alpha/{country_code}', timeout=3).json()
+            cap_data = country_info[0].get('capitalInfo', {}).get('latlng', [])
+            if len(cap_data) >= 2:
+                cap_lat, cap_lon = cap_data[0], cap_data[1]
+            else:
+                cap_lat, cap_lon = None, None
+        except Exception as e:
+            logging.warning(f"Failed to fetch capital coordinates for {country_code}: {e}")
+            cap_lat, cap_lon = None, None
 
-lat = user_lat.iloc[0] if isinstance(user_lat, pd.Series) else user_lat
-lon = user_lon.iloc[0] if isinstance(user_lon, pd.Series) else user_lon
+    except Exception as err:
+        logging.error(f"IP Geolocation completely failed: {err}")
+        exact_lat, exact_lon, cap_lat, cap_lon = None, None, None, None
 
-params = {
-    'latitude': lat,
-    'longitude': lon,
-    'current': 'temperature_2m,wind_speed_10m,weather_code',
-    'timezone': 'auto'
-}
+    url = 'https://api.open-meteo.com/v1/forecast'
+    weather_data = None
 
-try:
-    response = requests.get(url, params=params, timeout=5).json()
-    temp = response['current']['temperature_2m']
-    wind = response['current']['wind_speed_10m']
-    code = response['current']['weather_code']
+    #base configuration for the specific location
+    if exact_lat is not None and exact_lon is not None:
+        params = {
+            'latitude': exact_lat,
+            'longitude': exact_lon,
+            'hourly': 'temperature_2m,wind_speed_10m,weather_code',
+            'timezone': 'auto',
+            'forecast_days': 1
+        }
+        try:
+            response = requests.get(url, params=params, timeout=5)
+            response.raise_for_status()
+            weather_data = response.json()
+            logging.info(f"Weather fetched successfully for EXACT location: [{exact_lat}, {exact_lon}]")
+        except Exception as e_exact:
+            logging.warning(f"Exact location weather failed ({e_exact}).")
 
-    df_merged['Weather_Temperature'] = temp
-    df_merged['Weather_Wind'] = wind
-    df_merged['Weather_Condition'] = code
-    df_merged['Weather_Storm'] = 1 if code >= 95 else 0
+    #capital fallback
+    if weather_data is None and cap_lat is not None and cap_lon is not None:
+        logging.info(f"Attempting fallback to country capital: [{cap_lat}, {cap_lon}]")
+        params['latitude'] = cap_lat
+        params['longitude'] = cap_lon
+        try:
+            response_cap = requests.get(url, params=params, timeout=5)
+            response_cap.raise_for_status()
+            weather_data = response_cap.json()
+            logging.info("Weather fetched successfully for CAPITAL fallback.")
+        except Exception as e_cap:
+            logging.error(f"Capital fallback also failed: {e_cap}")
 
-    logging.info(f"Dynamic Weather API fetched for [{lat}, {lon}]: {temp}°C, Wind: {wind} km/h")
-except Exception as e:
-    logging.error(f"Failed to fetch weather data for [{lat}, {lon}]: {e}. Fallback applied.")
-    df_merged['Weather_Temperature'] = 20.0
-    df_merged['Weather_Wind'] = 10.0
-    df_merged['Weather_Condition'] = 0
-    df_merged['Weather_Storm'] = 0
+    #processing data into a dataframe
+    if weather_data and 'hourly' in weather_data:
+        hourly_temp = weather_data['hourly']['temperature_2m']
+        hourly_wind = weather_data['hourly']['wind_speed_10m']
+        hourly_code = weather_data['hourly']['weather_code']
+
+        df_merged['Hourly_Temperature'] = json.dumps(hourly_temp)
+        df_merged['Hourly_Wind'] = json.dumps(hourly_wind)
+        df_merged['Hourly_Weather_Code'] = json.dumps(hourly_code)
+
+        df_merged['Weather_Temperature'] = max(hourly_temp[8:21])
+        df_merged['Weather_Wind'] = max(hourly_wind[8:21])
+        df_merged['Weather_Condition'] = max(hourly_code[8:21])
+        df_merged['Weather_Storm'] = 1 if any(c >= 95 for c in hourly_code[8:21]) else 0
+    else:
+        logging.error("Weather API unavailable. Applying default safe fallbacks.")
+        df_merged['Weather_Temperature'], df_merged['Weather_Wind'] = 20.0, 10.0
+        df_merged['Weather_Condition'], df_merged['Weather_Storm'] = 0, 0
+        df_merged['Hourly_Temperature'], df_merged['Hourly_Wind'], df_merged['Hourly_Weather_Code'] = '[]', '[]', '[]'
+
+    return df_merged
+
+df_merged = fetch_weather_with_capital_fallback(df_merged)
 
 #cleaning and converting dta with API and configuration
 df_merged['Weather_Temperature'] = pd.to_numeric(df_merged.get('Weather_Temperature', 20), errors='coerce').fillna(20.0)
@@ -297,11 +343,11 @@ df_merged['HRV_EWMA_7'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(la
 logging.info("Calculating EWMA-based ACWR (Acute:Chronic Workload Ratio)...")
 sRPE_filled = df_merged['sRPE'].fillna(0)
 
-df_merged['Acute_Load_7d'] = df_merged.groupby('User_ID', group_keys=False).apply(
-    lambda g: g['sRPE'].fillna(0).ewm(span=7, adjust=False).mean()
+df_merged['Acute_Load_7d'] = df_merged.groupby('User_ID')['sRPE'].transform(
+    lambda x: x.fillna(0).ewm(span=7, adjust=False).mean()
 )
-df_merged['Chronic_Load_28d'] = df_merged.groupby('User_ID', group_keys=False).apply(
-    lambda g: g['sRPE'].fillna(0).ewm(span=28, adjust=False).mean()
+df_merged['Chronic_Load_28d'] = df_merged.groupby('User_ID')['sRPE'].transform(
+    lambda x: x.fillna(0).ewm(span=28, adjust=False).mean()
 )
 df_merged['ACWR'] = df_merged['Acute_Load_7d'] / (df_merged['Chronic_Load_28d'] + 1e-5)
 
