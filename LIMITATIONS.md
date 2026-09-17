@@ -9,10 +9,6 @@
   cannot currently be dynamically flagged or excluded before calculating baselines.
 - **In-memory processing.** Transformations run in-memory via Pandas rather
   than native SQL warehouse transformations (e.g., Snowflake/DuckDB).
-- **Weather API uses a single static location**, not per-user GPS or IP
-  geolocation.
-- **Weather forecast is point-in-time ("now"), not full-day.** A storm later
-  in the day isn't currently flagged in advance.
 - **CMJ/Grip strength require measurement equipment** available mainly to
   professional athletes/clubs; the system falls back to HRV+DOMS for users
   without it, but this fallback layer is less precise.
