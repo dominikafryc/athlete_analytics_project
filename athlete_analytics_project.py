@@ -137,37 +137,32 @@ logging.info(f"KNN Imputation completed. Remaining NULL values: {df_merged[valid
 df_merged['Daily_HRV'] = df_merged['Daily_HRV'].fillna(df_merged['Daily_HRV'].mean())
 df_merged['Sleep_Duration'] = df_merged['Sleep_Duration'].fillna(7.0)
 
-#UPDATE: API weather: precise coordinates, capital fallback
-def fetch_weather_with_capital_fallback(df_merged):
+# UPDATE: API weather - Operational Decision Engine (Current day only)
+def fetch_current_forecast():
+    exact_lat, exact_lon, cap_lat, cap_lon = None, None, None, None
     try:
         ip_info = requests.get('http://ip-api.com/json/', timeout=3).json()
-        exact_lat, exact_lon = ip_info['lat'], ip_info['lon']
-        country_code = ip_info['countryCode']
-
-        #capital coordinates
-        try:
-            country_info = requests.get(f'https://restcountries.com/v3.1/alpha/{country_code}', timeout=3).json()
-            cap_data = country_info[0].get('capitalInfo', {}).get('latlng', [])
-            if len(cap_data) >= 2:
-                cap_lat, cap_lon = cap_data[0], cap_data[1]
-            else:
-                cap_lat, cap_lon = None, None
-        except Exception as e:
-            logging.warning(f"Failed to fetch capital coordinates for {country_code}: {e}")
-            cap_lat, cap_lon = None, None
-
+        exact_lat, exact_lon = ip_info.get('lat'), ip_info.get('lon')
+        country_code = ip_info.get('countryCode')
+        if country_code:
+            try:
+                country_info = requests.get(f'https://restcountries.com/v3.1/alpha/{country_code}', timeout=3).json()
+                cap_data = country_info[0].get('capitalInfo', {}).get('latlng', [])
+                cap_lat, cap_lon = (cap_data[0], cap_data[1]) if len(cap_data) >= 2 else (None, None)
+            except Exception as e:
+                logging.warning(f"Failed to fetch capital coordinates: {e}")
     except Exception as err:
-        logging.error(f"IP Geolocation completely failed: {err}")
-        exact_lat, exact_lon, cap_lat, cap_lon = None, None, None, None
+        logging.error(f"IP Geolocation failed: {err}")
 
     url = 'https://api.open-meteo.com/v1/forecast'
     weather_data = None
+    target_lat = exact_lat if exact_lat is not None else cap_lat
+    target_lon = exact_lon if exact_lon is not None else cap_lon
 
-    #base configuration for the specific location
-    if exact_lat is not None and exact_lon is not None:
+    if target_lat is not None and target_lon is not None:
         params = {
-            'latitude': exact_lat,
-            'longitude': exact_lon,
+            'latitude': target_lat,
+            'longitude': target_lon,
             'hourly': 'temperature_2m,wind_speed_10m,weather_code',
             'timezone': 'auto',
             'forecast_days': 1
@@ -176,99 +171,70 @@ def fetch_weather_with_capital_fallback(df_merged):
             response = requests.get(url, params=params, timeout=5)
             response.raise_for_status()
             weather_data = response.json()
-            logging.info(f"Weather fetched successfully for EXACT location: [{exact_lat}, {exact_lon}]")
-        except Exception as e_exact:
-            logging.warning(f"Exact location weather failed ({e_exact}).")
+            logging.info(f"Operational weather fetched for: [{target_lat}, {target_lon}]")
+        except Exception as e:
+            logging.warning(f"Weather fetch failed: {e}")
 
-    #capital fallback
-    if weather_data is None and cap_lat is not None and cap_lon is not None:
-        logging.info(f"Attempting fallback to country capital: [{cap_lat}, {cap_lon}]")
-        params['latitude'] = cap_lat
-        params['longitude'] = cap_lon
-        try:
-            response_cap = requests.get(url, params=params, timeout=5)
-            response_cap.raise_for_status()
-            weather_data = response_cap.json()
-            logging.info("Weather fetched successfully for CAPITAL fallback.")
-        except Exception as e_cap:
-            logging.error(f"Capital fallback also failed: {e_cap}")
+    return weather_data
 
-    #processing data into a dataframe
-    if weather_data and 'hourly' in weather_data:
-        hourly_temp = weather_data['hourly']['temperature_2m']
-        hourly_wind = weather_data['hourly']['wind_speed_10m']
-        hourly_code = weather_data['hourly']['weather_code']
+# Identify "today" (latest day in data)
+latest_date = df_merged['Date'].max()
+mask_today = df_merged['Date'] == latest_date
 
-        df_merged['Hourly_Temperature'] = json.dumps(hourly_temp)
-        df_merged['Hourly_Wind'] = json.dumps(hourly_wind)
-        df_merged['Hourly_Weather_Code'] = json.dumps(hourly_code)
+# Set neutral values for history to prevent data-leakage to ML models
+df_merged['Weather_Temperature'] = np.nan
+df_merged['Weather_Wind'] = np.nan
+df_merged['Weather_Storm'] = 0
+df_merged['Is_Weather_Optimal'] = 1
 
-        df_merged['Weather_Temperature'] = max(hourly_temp[8:21])
-        df_merged['Weather_Wind'] = max(hourly_wind[8:21])
-        df_merged['Weather_Condition'] = max(hourly_code[8:21])
-        df_merged['Weather_Storm'] = 1 if any(c >= 95 for c in hourly_code[8:21]) else 0
-    else:
-        logging.error("Weather API unavailable. Applying default safe fallbacks.")
-        df_merged['Weather_Temperature'], df_merged['Weather_Wind'] = 20.0, 10.0
-        df_merged['Weather_Condition'], df_merged['Weather_Storm'] = 0, 0
-        df_merged['Hourly_Temperature'], df_merged['Hourly_Wind'], df_merged['Hourly_Weather_Code'] = '[]', '[]', '[]'
+# Fetch and parse current forecast
+weather_data = fetch_current_forecast()
+curr_temp, curr_wind, curr_storm = 20.0, 10.0, 0
 
-    return df_merged
+if weather_data and 'hourly' in weather_data:
+    hourly_temp = weather_data['hourly'].get('temperature_2m', [])
+    hourly_wind = weather_data['hourly'].get('wind_speed_10m', [])
+    hourly_code = weather_data['hourly'].get('weather_code', [])
 
-df_merged = fetch_weather_with_capital_fallback(df_merged)
+    curr_temp = max(hourly_temp[8:21]) if len(hourly_temp) >= 21 else (hourly_temp[0] if hourly_temp else 20.0)
+    curr_wind = max(hourly_wind[8:21]) if len(hourly_wind) >= 21 else (hourly_wind[0] if hourly_wind else 10.0)
+    curr_storm = 1 if any(c >= 95 for c in hourly_code[8:21]) else 0
+else:
+    logging.error("Weather API unavailable. Using fallback parameters.")
 
-#cleaning and converting dta with API and configuration
-df_merged['Weather_Temperature'] = pd.to_numeric(df_merged.get('Weather_Temperature', 20), errors='coerce').fillna(20.0)
-df_merged['Weather_Wind'] = pd.to_numeric(df_merged.get('Weather_Wind', 10), errors='coerce').fillna(10.0)
-df_merged['Weather_Storm'] = pd.to_numeric(df_merged.get('Weather_Storm', 0), errors='coerce').fillna(0).astype(int)
+# Apply forecast ONLY to the latest day
+df_merged.loc[mask_today, 'Weather_Temperature'] = curr_temp
+df_merged.loc[mask_today, 'Weather_Wind'] = curr_wind
+df_merged.loc[mask_today, 'Weather_Storm'] = curr_storm
 
-#connecting weather configuration per discipline
-discipline_col = None
-for candidate in ['Main_Discipline', 'Discipline']:
-    if candidate in df_merged.columns:
-        discipline_col = candidate
-        break
+# Map discipline configuration and evaluate conditions for today
+discipline_col = next((c for c in ['Main_Discipline', 'Discipline'] if c in df_merged.columns), None)
+config_key_col = next((c for c in ['Discipline', 'Main_Discipline'] if c in discipline_weather_config.columns), None)
 
-config_key_col = None
-for candidate in ['Discipline', 'Main_Discipline']:
-    if candidate in discipline_weather_config.columns:
-        config_key_col = candidate
-        break
-
-if discipline_col and config_key_col:
+if discipline_col and config_key_col and not discipline_weather_config.empty:
     df_merged = df_merged.merge(
         discipline_weather_config[[config_key_col, 'Temp_Min', 'Temp_Max', 'Wind_Max', 'No_Storm']],
         left_on=discipline_col, right_on=config_key_col, how='left'
     )
-    logging.info(f"Discipline weather config merged on '{discipline_col}' <-> '{config_key_col}'.")
+    
+    temp_min = pd.to_numeric(df_merged['Temp_Min'], errors='coerce')
+    temp_max = pd.to_numeric(df_merged['Temp_Max'], errors='coerce')
+    wind_max = pd.to_numeric(df_merged['Wind_Max'], errors='coerce')
+    no_storm = df_merged['No_Storm'].astype(str).str.lower().isin(['true', '1', '1.0']) if 'No_Storm' in df_merged.columns else pd.Series(False, index=df_merged.index)
+
+    is_temp_ok = (temp_min.isna() | (df_merged['Weather_Temperature'] >= temp_min)) & \
+                 (temp_max.isna() | (df_merged['Weather_Temperature'] <= temp_max))
+    is_wind_ok = wind_max.isna() | (df_merged['Weather_Wind'] <= wind_max)
+    is_storm_ok = (~no_storm) | (df_merged['Weather_Storm'] == 0)
+
+    # Calculate optimal flag for today, default history to '1'
+    optimal_calc = (is_temp_ok & is_wind_ok & is_storm_ok).astype(int)
+    df_merged['Is_Weather_Optimal'] = np.where(mask_today, optimal_calc, 1)
+
+    df_merged = df_merged.drop(columns=['Temp_Min', 'Temp_Max', 'Wind_Max', 'No_Storm'])
+    logging.info("Operational weather config merged successfully.")
 else:
-    logging.warning("Could not merge discipline_weather_config: matching discipline column not found. "
-                     "Is_Weather_Optimal will default to permissive (1) for all rows.")
-
-def get_numeric_series(df, col_name):
-    if col_name in df.columns:
-        return pd.to_numeric(df[col_name], errors='coerce')
-    return pd.Series(np.nan, index=df.index)
-
-temp_min = get_numeric_series(df_merged, 'Temp_Min')
-temp_max = get_numeric_series(df_merged, 'Temp_Max')
-wind_max = get_numeric_series(df_merged, 'Wind_Max')
-
-if 'No_Storm' in df_merged.columns:
-    no_storm = df_merged['No_Storm'].astype(str).str.lower().isin(['true', '1', '1.0'])
-else:
-    no_storm = pd.Series(False, index=df_merged.index)
-
-# weather conditions
-is_temp_ok = (temp_min.isna() | (df_merged['Weather_Temperature'] >= temp_min)) & \
-             (temp_max.isna() | (df_merged['Weather_Temperature'] <= temp_max))
-
-is_wind_ok = wind_max.isna() | (df_merged['Weather_Wind'] <= wind_max)
-
-is_storm_ok = (~no_storm) | (df_merged['Weather_Storm'] == 0)
-
-#final flag
-df_merged['Is_Weather_Optimal'] = (is_temp_ok & is_wind_ok & is_storm_ok).astype(int)
+    logging.warning("Matching discipline column not found. Defaulting to optimal.")
 
 # menstrual cycle module
 logging.info("Starting calculation of Menstrual Cycle Metrics...")
