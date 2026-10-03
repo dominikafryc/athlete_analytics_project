@@ -18,3 +18,7 @@
 - **Not validated on real users or large-scale data.** Model metrics reflect
   performance on synthetic data only.
 * **IP Geolocation Accuracy & VPN Trust:** The weather module heavily relies on third-party IP geolocation (`ip-api.com`). The system blindly trusts the resolved IP address; therefore, if a user is utilizing a VPN or proxy, the pipeline will fetch accurate weather data for the server's location rather than the user's actual physical location. Furthermore, in the event of a hard technical failure (e.g., API timeouts, network drops, or rate limits), the system gracefully falls back to the country's capital coordinates, or ultimately applies default safe weather parameters (e.g., 20°C, no storms) if all external requests fail.
+- **Explicit consecutive-rest-day signal:** currently, rest days correctly
+      reduce Acute_Load_7d (zero-fill before EWMA), but there's no direct
+      feature capturing "how many consecutive rest days" as an independent
+      recovery signal, distinct from load reduction alone.
