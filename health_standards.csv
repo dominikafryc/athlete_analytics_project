@@ -1,0 +1,5 @@
+Metric_Name;Sex;Min_Optimal;Max_Optimal;Warning_Threshold;Unit
+Ferritin_ng_mL;Female;30,0;150,0;20,0;ng/mL
+Ferritin_ng_mL;Male;50,0;300,0;30,0;ng/mL
+Vitamin_D3_ng_mL;All;30,0;80,0;20,0;ng/mL
+CRP_mg_L;All;0,0;1,0;3,0;mg/L

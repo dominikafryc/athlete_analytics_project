@@ -1,0 +1,31 @@
+Discipline,Category,Temp_Min,Temp_Max,Wind_Max,No_Storm,Max_Precip_mm,Description
+Running_Outdoor,outdoor_endurance,-10.0,32.0,50.0,True,5.0,Outdoor running
+Hiking,outdoor_endurance,-10.0,32.0,50.0,True,5.0,Trekking
+Cycling_Road,outdoor_endurance,0.0,35.0,40.0,True,2.0,Road cycling
+Cycling_Outdoor,outdoor_endurance,0.0,35.0,40.0,True,2.0,Outdoor cycling
+Trail_Running,outdoor_endurance,-10.0,30.0,45.0,True,8.0,Trail running
+Walking,outdoor_endurance,-15.0,35.0,60.0,True,10.0,Walking
+Nordic_Walking,outdoor_endurance,-15.0,35.0,60.0,True,10.0,Nordic walking
+Rollerblading,outdoor_endurance,10.0,32.0,30.0,True,0.0,Rollerblading
+Football_Outdoor,outdoor_technical_ball,-5.0,32.0,45.0,True,5.0,Football
+Tennis_Outdoor,outdoor_technical_ball,10.0,34.0,30.0,True,0.0,Tennis
+Basketball_Outdoor,outdoor_technical_ball,8.0,34.0,35.0,True,0.0,Basketball
+Beach_Volleyball,outdoor_technical_ball,15.0,36.0,35.0,True,1.0,Beach volleyball
+Golf,outdoor_technical_ball,5.0,32.0,40.0,True,2.0,Golf
+Open_Water_Swim,outdoor_water,14.0,30.0,25.0,True,5.0,Open water swimming
+Kayaking,outdoor_water,8.0,32.0,30.0,True,5.0,Kayaking
+SUP_StandUpPaddling,outdoor_water,12.0,34.0,20.0,True,2.0,SUP
+Windsurfing,outdoor_water,10.0,32.0,65.0,True,10.0,Windsurfing
+Rowing,outdoor_water,5.0,30.0,25.0,True,3.0,Rowing
+Skiing_Alpine,outdoor_winter,-25.0,5.0,50.0,True,15.0,Alpine skiing
+Snowboarding,outdoor_winter,-25.0,5.0,50.0,True,15.0,Snowboarding
+Cross_Country_Skiing,outdoor_winter,-20.0,2.0,45.0,True,10.0,Cross-country skiing
+Ice_Skating_Outdoor,outdoor_winter,-15.0,0.0,40.0,True,0.0,Ice skating
+Gym_Strength,indoor,,,,False,,Gym
+Treadmill_Running,indoor,,,,False,,Treadmill
+Indoor_Cycling_Spinning,indoor,,,,False,,Bike trainer
+Pool_Swimming,indoor,,,,False,,Indoor swimming pool
+Yoga_Pilates_Indoor,indoor,,,,False,,Yoga
+Climbing_Indoor,indoor,,,,False,,Climbing
+Squash_Badminton_Indoor,indoor,,,,False,,Squash/Badminton
+CrossFit_Indoor,indoor,,,,False,,CrossFit
