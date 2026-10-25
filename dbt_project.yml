@@ -1,0 +1,27 @@
+
+name: 'dbt_athlete'
+version: '1.0.0'
+
+profile: 'dbt_athlete'
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+
+# Full documentation: https://docs.getdbt.com/docs/configuring-models
+models:
+  dbt_athlete:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+    
