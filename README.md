@@ -21,7 +21,8 @@ The project has two layers that currently run side by side:
 
 The Python pipeline does **not** read the dbt outputs yet. dbt serves as a reference implementation I compare against Python. Known differences between the two are documented in the case study (section 7).
 
-![dbt lineage](docs/lineage.png)
+![dbt lineage](<img width="1507" height="497" alt="Zrzut ekranu 2026-10-23 135918" src="https://github.com/user-attachments/assets/91c130c0-7403-438d-954b-d269c7962b70" />
+)
 
 ### Python: core vs. optional modules
 
@@ -116,17 +117,60 @@ dbt docs generate && dbt docs serve
 
 ## Testing
 
-**Python** (decision-logic unit tests): `is_weather_safe`, `get_adapted_discipline`, `get_cns_fatigue_level`, `check_discipline_swap`.
+Tests run automatically on every push and pull request via GitHub Actions (`dbt build` + `pytest`).
+
+### Python (decision-logic unit tests)
+
+Cover the rule-based decision functions: `is_weather_safe`, `get_adapted_discipline`, `get_cns_fatigue_level`, `check_discipline_swap`.
 
 ```sh
 python -m pytest -v
 ```
 
-**dbt** (data quality): uniqueness of the `User_ID` + `Date` grain, accepted values for categorical outputs, calendar completeness, consistency between level and index columns, and target alignment (`Target_Readiness_Tomorrow` equals the next day's status).
+### dbt (data quality and logic)
 
 ```sh
-dbt test
+dbt build   # runs models, seeds and all tests
+dbt test    # runs tests only
 ```
+
+**Generic tests (defined in the model YAML files)**
+
+| Test | Where | What it checks |
+|------|-------|----------------|
+| `unique_combination_of_columns` | `stg_daily_metrics`, `int_business_logic`, `fct_daily_readiness` | The grain `User_ID` + `Date` is unique at every layer (no join fan-out, no hidden duplicates behind `select distinct`) |
+| `unique`, `not_null` | `stg_user_profile.user_id` | Valid primary key |
+| `not_null`, `relationships` | `fct_daily_readiness` keys | Every row belongs to a known user |
+| `accepted_values` | `CNS_Fatigue_Level`, `Age_Group` | Categorical outputs contain only expected labels |
+
+**Singular tests (`tests/`)**
+
+| Test | What it checks |
+|------|----------------|
+| `assert_calendar_has_no_gaps` | No missing days between a user's first and last date |
+| `assert_business_logic_covers_calendar` | Row count of the final model equals the calendar spine |
+| `assert_hrv_baseline_is_valid` | HRV baseline is positive and within the user's observed range |
+| `assert_level_matches_index` | Text levels and numeric indexes (insomnia, CNS fatigue) never disagree |
+| `assert_target_matches_next_day_status` | `Target_Readiness_Tomorrow` equals the next day's `Readiness_Status_Today` |
+| `assert_trimp_is_non_negative` | Scaled daily TRIMP is never negative |
+
+**Unit tests (dbt 1.8+, defined in `intermediate_models.yml`)**
+
+Check business-rule logic on hand-made rows, e.g. an HRV ratio below the threshold must be classified as `Low`.
+
+```sh
+dbt test --select test_type:unit
+```
+
+### Python vs. dbt parity report
+
+`compare_report.py` is not a pass/fail test. It compares the dbt mart with the Python output column by column and reports the share of differing values, NULL mismatches and absolute differences.
+
+```sh
+python compare_report.py   # writes parity_report.csv
+```
+
+Results and their causes are described in the [case study](case_study.md), section 7.
 
 ## Status & Further Documentation
 
