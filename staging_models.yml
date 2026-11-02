@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_daily_metrics
+    columns:
+      - name: Date
+        # tests:
+         # - unique:
+          #    column_name: "User_ID || '-' || Date"
+
+  - name: stg_user_profile
+    columns:
+      - name: User_ID
+        tests: [unique, not_null]

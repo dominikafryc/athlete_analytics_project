@@ -1,0 +1,14 @@
+version: 2
+models:
+  - name: int_business_logic
+    columns:
+      - name: CNS_Fatigue_Level
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Severe', 'Moderate', 'Normal']
+      - name: Age_Group
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['<18', '18-29', '30-39', '40-49', '50+', 'Unknown']
