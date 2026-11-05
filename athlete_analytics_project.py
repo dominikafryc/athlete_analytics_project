@@ -18,7 +18,7 @@ from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 import json
 
-def load_all_datasets(data_dir='.', sep=';', decimal=','):
+def load_all_datasets(data_dir='seeds', sep=',', decimal='.'):
     csv_files = {
         'blood_biomarkers': 'blood_biomarkers.csv',
         'daily_metrics': 'daily_metrics.csv',

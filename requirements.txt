@@ -1,0 +1,9 @@
+   pandas
+   numpy
+   scikit-learn
+   shap
+   requests
+   joblib
+   pytest
+   duckdb
+   dbt-duckdb

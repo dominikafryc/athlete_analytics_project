@@ -29,3 +29,11 @@ Yoga_Pilates_Indoor,indoor,,,,False,,Yoga
 Climbing_Indoor,indoor,,,,False,,Climbing
 Squash_Badminton_Indoor,indoor,,,,False,,Squash/Badminton
 CrossFit_Indoor,indoor,,,,False,,CrossFit
+
+box,indoor,10.0,35.0,100.0,False,100.0,Indoor boxing
+cycling,outdoor_endurance,-5.0,40.0,40.0,True,10.0,Outdoor cycling
+gym,indoor,10.0,35.0,100.0,False,100.0,Indoor gym
+nordic walking,outdoor_endurance,-15.0,35.0,50.0,True,15.0,Outdoor nordic walking
+roller blades,outdoor_endurance,5.0,35.0,30.0,True,0.0,Outdoor roller blades
+running,outdoor_endurance,-15.0,35.0,50.0,True,15.0,Outdoor running
+swimming,indoor,10.0,35.0,100.0,False,100.0,Indoor swimming

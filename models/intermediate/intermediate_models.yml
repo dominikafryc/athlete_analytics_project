@@ -1,14 +1,19 @@
 version: 2
+
 models:
   - name: int_business_logic
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [user_id, date]
     columns:
-      - name: CNS_Fatigue_Level
-        tests:
+      - name: cns_fatigue_level
+        data_tests:
           - accepted_values:
               arguments:
                 values: ['Severe', 'Moderate', 'Normal']
-      - name: Age_Group
-        tests:
+      - name: age_group
+        data_tests:
           - accepted_values:
               arguments:
                 values: ['<18', '18-29', '30-39', '40-49', '50+', 'Unknown']

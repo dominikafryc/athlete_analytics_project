@@ -19,6 +19,7 @@ env/
 target/
 dbt_packages/
 logs/
+.venv/
 .user.yml
 # local DuckDB database (rebuilt with `dbt build`)
 *.duckdb

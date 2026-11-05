@@ -14,7 +14,6 @@ clean-targets:         # directories to be removed by `dbt clean`
   - "target"
   - "dbt_packages"
 
-
 # Full documentation: https://docs.getdbt.com/docs/configuring-models
 models:
   dbt_athlete:
@@ -25,3 +24,6 @@ models:
     marts:
       +materialized: table
     
+seeds:
+  dbt_athlete:
+    +quote_columns: true
