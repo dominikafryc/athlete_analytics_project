@@ -34,7 +34,7 @@ Since the data is generated artificially, the project is a proof of concept for 
 The project has two layers that currently run **side by side**:
 
 - **Python** (`athlete_analytics_project.py`) is the complete pipeline and the source of truth for the ML model. It covers imputation, cycle-aware baselines, EWMA/ACWR, Z-scores, ferritin handling, anomaly detection, PCA/KMeans, the Random Forest, SHAP, the weather API and the recommendation engine.
-- **dbt (DuckDB)** reimplements the part of the logic that fits SQL naturally: calendar spine, rolling baselines, TRIMP, and rule-based business logic. The raw CSVs are loaded as dbt seeds. The models are structured as staging (loading, cleaning, standardization), intermediate (`int_user_calendar`, `int_rolling_baselines`, `int_trimp`, `int_business_logic`) and a mart, `fct_daily_readiness`, which combines TRIMP and the business logic. Python's CSV output has the same name but is produced independently. The project has 13 models (8 staging, 4 intermediate, 1 mart) and 8 seeds.
+- **dbt (DuckDB)** reimplements the part of the logic that fits SQL naturally: calendar spine, rolling baselines, TRIMP, and rule-based business logic. The raw CSVs live in `seeds/` and are shared: dbt loads them as seeds and the Python pipeline reads the same files. The models are structured as staging (loading, cleaning, standardization), intermediate (`int_user_calendar`, `int_rolling_baselines`, `int_trimp`, `int_business_logic`) and a mart, `fct_daily_readiness`, which combines TRIMP and the business logic. Python's CSV output has the same name but is produced independently. The project has 13 models (8 staging, 4 intermediate, 1 mart) and 8 seeds.
 
 ```mermaid
 flowchart LR
@@ -47,6 +47,10 @@ flowchart LR
 ```
 
 **Important:** the Python pipeline does not read the dbt outputs. The two are not yet integrated, so dbt is a reference implementation I use to compare against Python, not part of the production path.
+
+**Quality checks and CI.** Data quality is tested at every dbt layer: uniqueness of the `user_id` + `date` grain on the staging, intermediate and mart models, key and relationship tests on the mart, accepted-values tests on the categorical outputs, and six singular tests (calendar completeness, row coverage of the final model, HRV baseline validity, consistency between text levels and numeric indexes, target alignment with the next day's status, non-negative TRIMP). The Python decision functions are covered by 12 pytest unit tests. GitHub Actions runs `dbt build` and `pytest` on every push and pull request, so a change that breaks a seed, a model or a test is visible immediately.
+
+CI paid for itself on the first runs. The first one failed because the CSV files in the repository were not in a consistent format: seven used `;` as the delimiter (five of them with decimal commas such as `71,0`) and one used `,`. dbt's type inference misread the decimal commas as integers and the seed load failed. I normalized all eight files to one standard format (comma delimiter, dot decimals), moved both dbt and Python to read from `seeds/`, and re-ran the parity report afterwards: every column-level result was identical to the one measured before the change. Fixing the delimiter also activated the weather module, which had been silently inactive.
 
 The decision to migrate part of the processing to dbt was driven by a desire to learn and expand my skill set, and because I believe moving certain metrics into a modeled SQL layer makes the project more maintainable and transparent. Certain elements were deliberately kept in Python because they do not belong in SQL: all ML models, API integrations, and complex indicators such as EWMA, Z-scores, ferritin imputation and cycle phases. EWMA, for example, weights recent workouts much more than those from a week ago. It can be computed recursively in SQL, but I judged Python to be its natural home.
 
@@ -61,7 +65,7 @@ The project uses EWMA-based ACWR, TRIMP, sRPE, ANS balance (RHR and HRV Z-scores
 - **Subjective vs. objective load.** `Load_Discrepancy` compares subjective effort (sRPE) with objective load (scaled TRIMP) to separate perceived exhaustion from the actual physical effort. Poor sleep (insomnia indicators) and cognitive stress can make a workout feel more draining than it objectively was, so they are modeled separately. Future calendar integration could correlate a dense schedule with elevated cognitive stress.
 - **Psychological stress** is a proxy (RHR Z-score minus HRV Z-score), not a psychological measurement.
 - **Experience.** The idea is that a discipline the athlete has trained for one year is a bigger stressor than one trained for eight, regardless of raw volume. In the current implementation experience is used only when choosing an **alternative discipline** (the second or third discipline with at least 2 years of experience, preferring the longest). It is not yet a multiplier in the load metrics.
-- **Data grain.** One row per user per day (`User_ID` + `Date`), enforced in dbt with a uniqueness test.
+- **Data grain.** One row per user per day (`User_ID` + `Date`), enforced in dbt with uniqueness tests on the staging, intermediate and mart models.
 
 ## 5. Target, model and recommendation engine
 
@@ -79,7 +83,7 @@ These numbers are modest, and they need context:
 I treat the model as a working end-to-end component, not as a validated predictor. The more valuable parts of the project are the feature pipeline, the rule-based recommendation engine, and the honest evaluation. Improving the model would need more data, a fold-matched comparison against the baselines, and features that carry information beyond the HRV that defines the label.
 
 **Recommendation engine (rule-based).** Rules are applied in priority order:
-1. Unsafe weather → swap to indoor (designed, but inactive in the sample run, see below).
+1. Unsafe weather → swap to indoor (applies to the latest days in the data, see below).
 2. Injury flag → rest.
 3. Severe CNS fatigue, anomaly flag, or high insomnia risk → rest.
 4. Moderate CNS fatigue or mental fatigue flag → swap to a secondary discipline with enough experience; if none exists, rest.
@@ -87,7 +91,7 @@ I treat the model as a working end-to-end component, not as a validated predicto
 
 CNS fatigue is detected in layers: CMJ drop vs. the 30-day baseline (−7% moderate, −15% severe), then grip strength drop (−5%, −10%), then a fallback on cycle-aware HRV Z-score and DOMS for users without measurement equipment. These thresholds are heuristic choices and have not been validated.
 
-**Weather** is not a model feature. It is designed as a safety gate on the final recommendation: an Open-Meteo forecast (daytime window, 08:00–20:00) for the latest day in the data, checked against a configuration table of temperature, wind and storm limits per discipline. **In the current sample run this gate is inactive.** `discipline_weather_config.csv` is comma-delimited while the loader expects semicolons, so the table is read as a single column, no discipline match is found, and the pipeline defaults to "weather optimal". The weather module is therefore implemented and unit-tested at the function level, but it has no effect on the recommendation distribution shown above. A second, smaller issue: the fallback to the country capital's coordinates fails on an unexpected API response. Location itself comes from IP geolocation, which is approximate: in my runs it landed more than 100 km from my actual location, and in a hosted notebook (Google Colab) it would point to the provider's server, so I run the pipeline locally.
+**Weather** is not a model feature. It is a safety gate on the final recommendation: an Open-Meteo forecast (daytime window, 08:00–20:00) for the latest day in the data, checked against a configuration table of temperature, wind and storm limits per discipline. The gate is active: in a recent run it switched a few recommendations to `Weather_Unsafe_Swap_Indoor`. It was inactive for a long time without my noticing, because `discipline_weather_config.csv` used a different delimiter than the other files, so the table was read as a single column and the pipeline defaulted to "weather optimal"; unifying the CSV format fixed it (see section 3). Because the forecast is fetched at run time, the number of weather-driven recommendations changes from day to day. A smaller open issue: the fallback to the country capital's coordinates fails on an unexpected API response. Location itself comes from IP geolocation, which is approximate: in my runs it landed more than 100 km from my actual location, and in a hosted notebook (Google Colab) it would point to the provider's server, so I run the pipeline locally.
 
 ## 6. Biggest challenge: data leakage
 
@@ -113,7 +117,7 @@ The leakage is not caused by KNN as a method, but by fitting it on the whole ser
 
 ## 7. Python vs. dbt parity
 
-I compared the dbt mart `fct_daily_readiness` with the Python output on all 720 user-days. Both cover exactly the same user-date rows. The differences come from more than missing-value handling and floating-point precision.
+I compared the dbt mart `fct_daily_readiness` with the Python output on all 720 user-days, using `compare_report.py` (baseline output: `parity_report_before.csv`). Both cover exactly the same user-date rows. The differences come from more than missing-value handling and floating-point precision.
 
 **Where they agree (0.00% of values differ):** `Daily_HRV`, `Sleep_Duration`, `HRV_30day_Baseline`, `Sleep_30day_Baseline`, `Readiness_Status_Today`, `Target_Readiness_Tomorrow`, `TRIMP_Objective_scaled`, `Age`, `Age_Group`, and the observed values of mood, DOMS, motivation, sleep architecture, CMJ and grip. The target definition is therefore reproduced exactly in SQL.
 
@@ -150,7 +154,6 @@ Further details are in [LIMITATIONS.md](LIMITATIONS.md) and [ROADMAP.md](ROADMAP
 - Compare the model against fold-matched baselines (persistence and majority class) and look for features beyond the HRV that defines the label.
 - Replace full-history KNN with causal imputation and compute Z-scores and phase baselines on expanding windows.
 - Let Python consume the dbt marts, with orchestration (for example Dagster, Prefect or Airflow) so each tool runs in sequence and produces one unified forecast, instead of everything living in a single script.
-- Add dbt tests and CI (uniqueness, accepted values, calendar completeness).
 - Modularize the Python code into a package.
 - Integrate user calendars so the model can assess available training time, review scheduled events and slot workouts into the agenda.
 
