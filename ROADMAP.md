@@ -13,15 +13,18 @@
 - [ ] Explicit consecutive-rest-days feature
 
 ## Architecture and engineering
+- [x] Grain uniqueness, key and singular tests on the dbt models
+- [ ] dbt unit tests for the business rules (readiness status, CNS fatigue)
+- [ ] Parity report after the methodology fixes (`parity_report_after.csv`) to compare with the baseline
 - [ ] Python reads the dbt marts instead of recomputing the same logic
 - [ ] Orchestration (Dagster, Prefect or Airflow) so each tool runs in sequence
-- [ ] CI running `dbt build` and `pytest`
+- [x] CI running `dbt build` and `pytest` (GitHub Actions)
 - [ ] Thresholds moved to dbt `vars`
 - [ ] Add an `if __name__ == "__main__":` guard so importing the module does not run the whole pipeline
 - [ ] Full modularization into a Python package (`config.py`, `weather.py`, etc.)
 
 ## Features
-- [ ] Fix per-file CSV delimiter detection and verify discipline names match the weather config, so the weather gate becomes active
+- [x] Normalize all datasets to one CSV format (comma delimiter, dot decimals) and read them from `seeds/`, so the weather gate becomes active
 - [ ] Fix the capital-city fallback (handle the `restcountries` response)
 - [ ] Per-user weather via IP geolocation, with country-capital fallback
 - [ ] Larger synthetic dataset or real data so PCA + KMeans has enough variance
