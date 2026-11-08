@@ -23,7 +23,7 @@ The project has two layers that currently run side by side:
 
 The Python pipeline does **not** read the dbt outputs yet. dbt serves as a reference implementation I compare against Python. Known differences between the two are documented in the case study (section 7).
 
-![dbt lineage](docs/lineage.png)
+![dbt lineage](dbt_lineage_graph.png)
 
 ### Python: core vs. optional modules
 
