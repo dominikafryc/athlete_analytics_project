@@ -27,3 +27,13 @@ models:
 seeds:
   dbt_athlete:
     +quote_columns: true
+
+vars:
+  hrv_low_threshold: 0.85
+  hrv_moderate_threshold: 0.95
+  cmj_severe_drop: -0.15
+  cmj_moderate_drop: -0.07
+  grip_severe_drop: -0.10
+  grip_moderate_drop: -0.05
+  doms_severe: 8
+  doms_moderate: 6
