@@ -57,13 +57,13 @@ business_logic AS (
                  AND ((CMJ_Jump_cm - CMJ_Jump_cm_30day) / NULLIF(CMJ_Jump_cm_30day, 0)) < {{ var('cmj_severe_drop') }} THEN 'Severe'
             WHEN CMJ_Jump_cm IS NOT NULL 
                  AND ((CMJ_Jump_cm - CMJ_Jump_cm_30day) / NULLIF(CMJ_Jump_cm_30day, 0)) < {{ var('cmj_moderate_drop') }} THEN 'Moderate'
-            WHEN CMJ_Jump_cm IS NOT NULL THEN 'Normal'
+            WHEN CMJ_Jump_cm IS NOT NULL AND CMJ_Jump_cm_30day IS NOT NULL THEN 'Normal'
             
             WHEN Grip_Strength_kg IS NOT NULL 
                  AND ((Grip_Strength_kg - Grip_Strength_kg_30day) / NULLIF(Grip_Strength_kg_30day, 0)) < {{ var('grip_severe_drop') }} THEN 'Severe'
             WHEN Grip_Strength_kg IS NOT NULL 
                  AND ((Grip_Strength_kg - Grip_Strength_kg_30day) / NULLIF(Grip_Strength_kg_30day, 0)) < {{ var('grip_moderate_drop') }} THEN 'Moderate'
-            WHEN Grip_Strength_kg IS NOT NULL THEN 'Normal'
+            WHEN Grip_Strength_kg IS NOT NULL AND Grip_Strength_kg_30day IS NOT NULL THEN 'Normal'
             
             WHEN DOMS_Scale >= {{ var('doms_severe') }} THEN 'Severe'
             WHEN DOMS_Scale >= {{ var('doms_moderate') }} THEN 'Moderate'
@@ -76,13 +76,13 @@ business_logic AS (
                  AND ((CMJ_Jump_cm - CMJ_Jump_cm_30day) / NULLIF(CMJ_Jump_cm_30day, 0)) < {{ var('cmj_severe_drop') }} THEN 2
             WHEN CMJ_Jump_cm IS NOT NULL 
                  AND ((CMJ_Jump_cm - CMJ_Jump_cm_30day) / NULLIF(CMJ_Jump_cm_30day, 0)) < {{ var('cmj_moderate_drop') }} THEN 1
-            WHEN CMJ_Jump_cm IS NOT NULL THEN 0
+            WHEN CMJ_Jump_cm IS NOT NULL AND CMJ_Jump_cm_30day IS NOT NULL THEN 0
             
             WHEN Grip_Strength_kg IS NOT NULL 
                  AND ((Grip_Strength_kg - Grip_Strength_kg_30day) / NULLIF(Grip_Strength_kg_30day, 0)) < {{ var('grip_severe_drop') }} THEN 2
             WHEN Grip_Strength_kg IS NOT NULL 
                  AND ((Grip_Strength_kg - Grip_Strength_kg_30day) / NULLIF(Grip_Strength_kg_30day, 0)) < {{ var('grip_moderate_drop') }} THEN 1
-            WHEN Grip_Strength_kg IS NOT NULL THEN 0
+            WHEN Grip_Strength_kg IS NOT NULL AND Grip_Strength_kg_30day IS NOT NULL THEN 0
             
             WHEN DOMS_Scale >= {{ var('doms_severe') }} THEN 2
             WHEN DOMS_Scale >= {{ var('doms_moderate') }} THEN 1

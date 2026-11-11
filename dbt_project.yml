@@ -37,3 +37,4 @@ vars:
   grip_moderate_drop: -0.05
   doms_severe: 8
   doms_moderate: 6
+  min_baseline_days: 7
