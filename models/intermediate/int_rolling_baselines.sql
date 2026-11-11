@@ -14,17 +14,13 @@ user_profile AS (
     SELECT * FROM {{ ref('stg_user_profile') }}
 ),
 
-global_stats AS (
-    SELECT AVG(Daily_HRV) as global_avg_hrv 
-    FROM daily_metrics
-),
-
 joined_data AS (
     SELECT 
         c.User_ID,
         c.calendar_date AS Date,
     
-        COALESCE(dm.Daily_HRV, g.global_avg_hrv) AS Daily_HRV,
+        dm.Daily_HRV AS Daily_HRV,
+        (dm.Daily_HRV IS NULL) AS HRV_Is_Missing,
         COALESCE(dm.Sleep_Duration, 7.0) AS Sleep_Duration,
         
         dm.CMJ_Jump_cm,
@@ -42,7 +38,6 @@ joined_data AS (
         ON c.User_ID = dm.User_ID AND c.calendar_date = dm.Date
     LEFT JOIN user_profile up 
         ON c.User_ID = up.User_ID
-    CROSS JOIN global_stats g
 ),
 
 rolling_averages AS (
