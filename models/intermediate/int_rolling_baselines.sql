@@ -40,35 +40,23 @@ joined_data AS (
         ON c.User_ID = up.User_ID
 ),
 
-rolling_averages AS (
-    SELECT
-        *, 
-        
-        AVG(Daily_HRV) OVER (
-            PARTITION BY User_ID 
-            ORDER BY Date ASC 
-            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS HRV_30day_Baseline,
-
-        AVG(Sleep_Duration) OVER (
-            PARTITION BY User_ID 
-            ORDER BY Date ASC 
-            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS Sleep_30day_Baseline,
-
-        AVG(CMJ_Jump_cm) OVER (
-            PARTITION BY User_ID 
-            ORDER BY Date ASC 
-            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS CMJ_Jump_cm_30day,
-
-        AVG(Grip_Strength_kg) OVER (
-            PARTITION BY User_ID 
-            ORDER BY Date ASC 
-            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-        ) AS Grip_Strength_kg_30day
-
-    FROM joined_data
-)
+   rolling_averages AS (
+       SELECT
+           *,
+           CASE WHEN COUNT(Daily_HRV) OVER w >= {{ var('min_baseline_days') }}
+                THEN AVG(Daily_HRV) OVER w END AS HRV_30day_Baseline,
+           CASE WHEN COUNT(Sleep_Duration) OVER w >= {{ var('min_baseline_days') }}
+                THEN AVG(Sleep_Duration) OVER w END AS Sleep_30day_Baseline,
+           CASE WHEN COUNT(CMJ_Jump_cm) OVER w >= {{ var('min_baseline_days') }}
+                THEN AVG(CMJ_Jump_cm) OVER w END AS CMJ_Jump_cm_30day,
+           CASE WHEN COUNT(Grip_Strength_kg) OVER w >= {{ var('min_baseline_days') }}
+                THEN AVG(Grip_Strength_kg) OVER w END AS Grip_Strength_kg_30day
+       FROM joined_data
+       WINDOW w AS (
+           PARTITION BY User_ID
+           ORDER BY Date ASC
+           ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+       )
+   )
 
 SELECT * FROM rolling_averages
