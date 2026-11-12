@@ -138,6 +138,16 @@ TRIMP matches in all 720 rows even though the two implementations look up HR res
 
 I consider the dbt behavior more honest where it keeps NULLs. In particular, Python labels users without sleep data as low insomnia risk, which is a fabricated assessment. The two outputs are not equivalent, but they agree exactly on the readiness target and the HRV baselines.
 
+### Refactoring & Parity Update
+
+I first measured the initial discrepancies between the legacy Python pipeline and the new dbt SQL models. Next, I fixed the identified methodological errors in dbt by removing data leakage (global mean imputation) from HRV averages and introducing a minimum observation period (cold start prevention) for rolling baselines. Finally, I measured the parity again. Paradoxically, the discrepancy for baseline metrics increased, which was the exact desired outcome—dbt now calculates rolling windows correctly, exposing the flaws in the legacy Python reference script.
+
+| Metric | Discrepancy BEFORE | Discrepancy AFTER | Conclusion / Cause |
+| :--- | :--- | :--- | :--- |
+| `hrv_30day_baseline` | 0.00% | 9.64% | **Increased intentionally.** dbt no longer leaks future data into averages, whereas the Python script still does. |
+| `grip_strength_kg_30day` | 31.64% | 19.85% | **Decreased.** dbt now properly requires 7 days of minimum observations (cold start prevention). |
+| `cns_fatigue_level` | 12.04% | 12.88% | **Adjusted.** A direct downstream consequence of the corrected baseline calculations. |
+
 ## 8. Known weaknesses of the current design
 
 - Users without a tracker get a constant (global mean) HRV, so their ratio is 1 and their status is always `High`. These rows should be flagged or excluded from labels.
