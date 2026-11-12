@@ -17,3 +17,33 @@ models:
           - accepted_values:
               arguments:
                 values: ['<18', '18-29', '30-39', '40-49', '50+', 'Unknown']
+unit_tests:
+     - name: hrv_ratio_below_threshold_is_low
+       model: int_business_logic
+       given:
+         - input: ref('int_rolling_baselines')
+           rows:
+             - {User_ID: "u1", Date: "2026-01-01", Daily_HRV: 40, HRV_30day_Baseline: 60}
+       expect:
+         rows:
+           - {User_ID: "u1", Readiness_Status_Today: "Low"}
+
+     - name: hrv_ratio_above_threshold_is_high
+       model: int_business_logic
+       given:
+         - input: ref('int_rolling_baselines')
+           rows:
+             - {User_ID: "u1", Date: "2026-01-01", Daily_HRV: 62, HRV_30day_Baseline: 60}
+       expect:
+         rows:
+           - {User_ID: "u1", Readiness_Status_Today: "High"}
+
+     - name: missing_baseline_gives_null_status
+       model: int_business_logic
+       given:
+         - input: ref('int_rolling_baselines')
+           rows:
+             - {User_ID: "u1", Date: "2026-01-01", Daily_HRV: 62, HRV_30day_Baseline: null}
+       expect:
+         rows:
+           - {User_ID: "u1", Readiness_Status_Today: null}
