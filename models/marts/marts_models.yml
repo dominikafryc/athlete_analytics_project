@@ -2,13 +2,14 @@ version: 2
 
 models:
   - name: fct_daily_readiness
-    description: "Daily readiness table: one row per user and day."
+    description: "Daily readiness table: one row per user and day. Combines rule-based features and labels with daily objective training load. The Python pipeline output is compared against it in the parity report."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [user_id, date]
     columns:
       - name: user_id
+        description: "User identifier."
         data_tests:
           - not_null
           - relationships:
@@ -16,4 +17,17 @@ models:
                 to: ref('stg_user_profile')
                 field: user_id
       - name: date
+        description: "Calendar day."
         data_tests: [not_null]
+      - name: hrv_30day_baseline
+        description: "Personal rolling 30-day HRV baseline used to judge readiness."
+      - name: readiness_status_today
+        description: "Readiness from the HRV ratio vs. baseline: Low below 0.85, Moderate below 0.95, otherwise High. NULL when HRV or baseline is missing."
+      - name: target_readiness_tomorrow
+        description: "Next day's readiness status; the prediction target of the Python model."
+      - name: cns_fatigue_level
+        description: "CNS fatigue: Severe, Moderate or Normal."
+      - name: insomnia_risk_level
+        description: "Insomnia risk from wake episodes, sleep efficiency and deep sleep: HIGH_RISK, MODERATE_RISK or LOW_RISK."
+      - name: trimp_objective_scaled_daily
+        description: "Daily objective training load (TRIMP), scaled; 0 on rest days."

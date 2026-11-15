@@ -1,18 +1,41 @@
 version: 2
 
 models:
+  - name: stg_blood_biomarkers
+    description: "Blood biomarker results per user (cortisol, testosterone, CK, CRP, ferritin, vitamin D3, TSH, glucose), renamed to snake_case and cast to proper types."
+
   - name: stg_daily_metrics
+    description: "Daily wearable and self-reported metrics per user: HRV, resting HR, sleep architecture, CMJ and grip strength, mood, DOMS, motivation and sRPE. Exact duplicates are removed with select distinct. Grain: one row per user and day."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [user_id, date]
     columns:
       - name: user_id
+        description: "User identifier."
         data_tests: [not_null]
       - name: date
+        description: "Measurement date."
         data_tests: [not_null]
 
+  - name: stg_discipline_weather_config
+    description: "Weather limits per sport discipline (temperature range, maximum wind, storm and precipitation rules). Used by the Python weather gate."
+
+  - name: stg_health_standards
+    description: "Reference ranges for blood biomarkers by sex: optimal minimum and maximum, and a warning threshold."
+
+  - name: stg_menstrual_cycle
+    description: "Menstrual cycle day, phase and period flag per user and date."
+
+  - name: stg_population_benchmarks
+    description: "Population averages for resting heart rate, HRV and sleep duration by age group and sex."
+
   - name: stg_user_profile
+    description: "One row per user: demographics, up to three disciplines with years of experience, chronic disease and injury flags."
     columns:
       - name: user_id
+        description: "User identifier, primary key."
         data_tests: [unique, not_null]
+
+  - name: stg_workouts_log
+    description: "Workout sessions per user and date: duration, average heart rate and session RPE (sRPE)."
