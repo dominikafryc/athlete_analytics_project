@@ -1,18 +1,30 @@
 version: 2
 
 models:
+  - name: int_user_calendar
+    description: "Calendar spine: one row for every day between each user's first and last date, so that missing days become explicit rows."
+
+  - name: int_trimp
+    description: "Objective training load (TRIMP) per user and day, from workout duration and heart-rate reserve. Each workout is min-max scaled to 0-1000 and then summed per day."
+
+  - name: int_rolling_baselines
+    description: "Joins the calendar with daily metrics and the user profile and computes personal 30-day rolling baselines for HRV, sleep, CMJ and grip strength."
+
   - name: int_business_logic
+    description: "Rule-based features and labels: age group, mental fatigue flag, insomnia risk, readiness status (today and the next day's target, from the HRV ratio against the baseline) and CNS fatigue level (CMJ, then grip strength, then DOMS)."
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [user_id, date]
     columns:
       - name: cns_fatigue_level
+        description: "CNS fatigue: Severe, Moderate or Normal. Uses the CMJ drop vs. baseline first, then grip strength, then DOMS."
         data_tests:
           - accepted_values:
               arguments:
                 values: ['Severe', 'Moderate', 'Normal']
       - name: age_group
+        description: "Age bucket (<18, 18-29, 30-39, 40-49, 50+)."
         data_tests:
           - accepted_values:
               arguments:
