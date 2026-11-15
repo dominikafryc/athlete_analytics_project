@@ -138,15 +138,15 @@ TRIMP matches in all 720 rows even though the two implementations look up HR res
 
 I consider the dbt behavior more honest where it keeps NULLs. In particular, Python labels users without sleep data as low insomnia risk, which is a fabricated assessment. The two outputs are not equivalent, but they agree exactly on the readiness target and the HRV baselines.
 
-### Refactoring & Parity Update
+### Parity update after dbt fixes
 
-I first measured the initial discrepancies between the legacy Python pipeline and the new dbt SQL models. Next, I fixed the identified methodological errors in dbt by removing data leakage (global mean imputation) from HRV averages and introducing a minimum observation period (cold start prevention) for rolling baselines. Finally, I measured the parity again. Paradoxically, the discrepancy for baseline metrics increased, which was the exact desired outcome—dbt now calculates rolling windows correctly, exposing the flaws in the legacy Python reference script.
+First, I measured the initial baseline parity between Python and dbt (`parity_report_before.csv`), where both layers agreed on HRV baselines only because both shared the same methodological flaws. Next, I fixed the dbt models by removing global HRV mean imputation, excluding the current day from rolling windows, and requiring at least 7 prior observations (`min_baseline_days: 7`) before computing a baseline. Finally, I re-ran `compare_report.py` (`parity_report.csv`) and confirmed that the new discrepancies reflect cleaner, leakage-free SQL logic rather than regressions—while Python still retains the legacy behavior.
 
-| Metric | Discrepancy BEFORE | Discrepancy AFTER | Conclusion / Cause |
-| :--- | :--- | :--- | :--- |
-| `hrv_30day_baseline` | 0.00% | 9.64% | **Increased intentionally.** dbt no longer leaks future data into averages, whereas the Python script still does. |
-| `grip_strength_kg_30day` | 31.64% | 19.85% | **Decreased.** dbt now properly requires 7 days of minimum observations (cold start prevention). |
-| `cns_fatigue_level` | 12.04% | 12.88% | **Adjusted.** A direct downstream consequence of the corrected baseline calculations. |
+| Column | Differing % (Before $\rightarrow$ After) | Python value, dbt NULL (Before $\rightarrow$ After) | Cause of change |
+| :--- | :---: | :---: | :--- |
+| `hrv_30day_baseline` | 0.00% $\rightarrow$ 9.64% | 0 $\rightarrow$ 222 | dbt excludes today's value from the window and keeps `NULL` for 180 missing-HRV days + 42 warm-up days |
+| `grip_strength_kg_30day` | 31.64% $\rightarrow$ 19.85% | 3 $\rightarrow$ 44 | Requiring 7 prior observations drops noisy early-window averages and reduces disagreement |
+| `readiness_status_today` | 0.00% $\rightarrow$ 1.41% | 0 $\rightarrow$ 222 | Downstream effect of the corrected HRV baseline and removal of fabricated `High` labels on missing HRV |
 
 ## 8. Known weaknesses of the current design
 
