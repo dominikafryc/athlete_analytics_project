@@ -59,6 +59,10 @@ if __name__ == '__main__':
   workouts_log = data['workouts_log']
   discipline_weather_config = data['discipline_weather_config']
 
+  mart = load_mart()
+  mart = mart.rename(columns={'user_id': 'User_ID', 'date': 'Date'})
+  mart['Date'] = pd.to_datetime(mart['Date'])
+
   # merge dataframes
   df_merged = pd.merge(daily_metrics, user_profile, on='User_ID', how='left')
 
@@ -314,21 +318,13 @@ if __name__ == '__main__':
 
   df_merged['HRV_Trend_5d'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(calc_trend_slope)
 
-  # rolling baselines & relative deviations
-  df_merged['HRV_30day_Baseline'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(lambda x: x.rolling(window=30, min_periods=1).mean())
-  df_merged['Sleep_30day_Baseline'] = df_merged.groupby('User_ID')['Sleep_Duration'].transform(lambda x: x.rolling(window=30, min_periods=1).mean())
-
-  df_merged['HRV_Pct_Of_Baseline'] = df_merged['Daily_HRV'] / (df_merged['HRV_30day_Baseline'] + 1e-5)
-  df_merged['Sleep_Pct_Of_Baseline'] = df_merged['Sleep_Duration'] / (df_merged['Sleep_30day_Baseline'] + 1e-5)
-
-  df_merged['HRV_Deviation_Alert'] = np.select(
-      [
-          df_merged['HRV_ZScore_CyclAware'] < -2.0,
-          df_merged['HRV_ZScore_CyclAware'] < -1.0,
-      ],
-      ['HRV_Significant_Drop', 'HRV_Mild_Drop'],
-      default='Normal'
-  )
+  df_merged = df_merged.merge(
+        mart[['User_ID', 'Date', 'hrv_30day_baseline']].rename(
+            columns={'hrv_30day_baseline': 'HRV_30day_Baseline'}
+        ),
+        on=['User_ID', 'Date'],
+        how='left'
+    )
 
   df_merged['HRV_EWMA_7'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(lambda x: x.ewm(span=7, adjust=False).mean())
 
@@ -458,16 +454,6 @@ if __name__ == '__main__':
   iso = IsolationForest(contamination=0.05, random_state=42)
   preds = iso.fit_predict(X_iso)
   df_merged['Anomaly_Flag'] = np.where(preds == -1, 1, 0)
-
-  # CNS load test - checking CMJ Jump and Grip Strength
-  df_merged['CMJ_Jump_cm_30day'] = df_merged.groupby('User_ID')['CMJ_Jump_cm'].transform(
-      lambda x: x.rolling(window=30, min_periods=1).mean()
-  )
-  df_merged['Grip_Strength_kg_30day'] = df_merged.groupby('User_ID')['Grip_Strength_kg'].transform(
-      lambda x: x.rolling(window=30, min_periods=1).mean()
-  )
-  df_merged['CMJ_Drop_%'] = (df_merged['CMJ_Jump_cm'] - df_merged['CMJ_Jump_cm_30day']) / df_merged['CMJ_Jump_cm_30day']
-  df_merged['Grip_Drop_%'] = (df_merged['Grip_Strength_kg'] - df_merged['Grip_Strength_kg_30day']) / df_merged['Grip_Strength_kg_30day']
 
   # CNS/neuromuscular fatigue
   def get_cns_fatigue_level(row):
