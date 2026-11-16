@@ -54,6 +54,6 @@ scale_trimp AS (
     FROM find_min_max
 )
 
-SELECT user_id AS User_ID, date AS Date, SUM(TRIMP_Objective_scaled) AS TRIMP_Objective_scaled_Daily
+SELECT user_id AS User_ID, date AS Date, SUM(TRIMP_Objective_scaled) AS trimp_objective_scaled
 FROM scale_trimp
 GROUP BY user_id, date

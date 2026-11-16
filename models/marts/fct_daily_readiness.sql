@@ -14,7 +14,7 @@ daily_trimp AS (
 
 SELECT
     b.*,
-    COALESCE(t.TRIMP_Objective_scaled_Daily, 0.0) AS TRIMP_Objective_scaled_Daily
+    COALESCE(t.trimp_objective_scaled, 0.0) AS trimp_objective_scaled
 
 FROM business_logic b
 LEFT JOIN daily_trimp t

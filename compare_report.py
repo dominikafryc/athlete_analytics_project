@@ -27,7 +27,7 @@ KEYS = ["user_id", "date"]
 
 # Same metric, different name: {name_in_dbt: name_in_python} (after normalization).
 RENAME_DBT_TO_PY = {
-    "trimp_objective_scaled_daily": "trimp_objective_scaled",
+
 }
 
 
