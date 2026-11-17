@@ -18,6 +18,14 @@ from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 import json
 
+def load_mart(path="dev.duckdb"):
+    import duckdb
+    con = duckdb.connect(path, read_only=True)
+    df = con.execute("SELECT * FROM fct_daily_readiness").df()
+    con.close()
+    df.columns = [c.lower() for c in df.columns]
+    return df
+
 def load_all_datasets(data_dir='seeds', sep=',', decimal='.'):
     csv_files = {
         'blood_biomarkers': 'blood_biomarkers.csv',
