@@ -348,67 +348,14 @@ if __name__ == '__main__':
   )
   df_merged['ACWR'] = df_merged['Acute_Load_7d'] / (df_merged['Chronic_Load_28d'] + 1e-5)
 
-  # TRIMP and load discrepancy
-  logging.info("Calculating TRIMP and Load Discrepancy...")
-
-  if 'workouts_log' in locals() and not workouts_log.empty:
-      df_workouts = workouts_log.copy()
-      df_workouts['Date'] = pd.to_datetime(df_workouts['Date'])
-
-      hr_cols_to_merge = [c for c in ['HR_Max', 'HR_Rest'] if c in df_merged.columns]
-
-      for c in hr_cols_to_merge:
-          if c in df_workouts.columns:
-              df_workouts = df_workouts.drop(columns=[c])
-
-      df_workouts = df_workouts.merge(
-          df_merged[['User_ID', 'Date'] + hr_cols_to_merge].drop_duplicates(subset=['User_ID', 'Date']),
-          on=['User_ID', 'Date'],
-          how='left'
-      )
-
-      avg_hr_col = None
-      for candidate in ['Avg_Heart_Rate', 'Avg_HR', 'Average_Heart_Rate', 'Heart_Rate_Avg', 'Avg_HeartRate']:
-          if candidate in df_workouts.columns:
-              avg_hr_col = candidate
-              break
-
-      dur_col = None
-      for candidate in ['Workout_Duration_min', 'Duration_min', 'Duration', 'Minutes']:
-          if candidate in df_workouts.columns:
-              dur_col = candidate
-              break
-
-      hr_rest = df_workouts['HR_Rest'].fillna(50.0) if 'HR_Rest' in df_workouts.columns else 50.0
-      hr_max = df_workouts['HR_Max'].fillna(190.0) if 'HR_Max' in df_workouts.columns else 190.0
-
-      if avg_hr_col:
-          avg_hr = df_workouts[avg_hr_col].fillna(hr_rest + 40.0)
-      else:
-          avg_hr = hr_rest + (hr_max - hr_rest) * 0.65
-
-      duration = df_workouts[dur_col].fillna(45.0) if dur_col else 45.0
-
-      # TRIMP
-      hr_reserve = ((avg_hr - hr_rest) / (hr_max - hr_rest + 1e-5)).clip(0.0, 1.0)
-      df_workouts['TRIMP_Objective'] = duration * hr_reserve * np.exp(1.92 * hr_reserve)
-
-      min_t, max_t = df_workouts['TRIMP_Objective'].min(), df_workouts['TRIMP_Objective'].max()
-      if max_t > min_t:
-          df_workouts['TRIMP_Objective_scaled'] = ((df_workouts['TRIMP_Objective'] - min_t) / (max_t - min_t + 1e-5)) * 1000.0
-      else:
-          df_workouts['TRIMP_Objective_scaled'] = 0.0
-
-      trimp_daily = df_workouts.groupby(['User_ID', 'Date'])['TRIMP_Objective_scaled'].sum().reset_index()
-
-      if 'TRIMP_Objective_scaled' in df_merged.columns:
-          df_merged = df_merged.drop(columns=['TRIMP_Objective_scaled'])
-
-      df_merged = df_merged.merge(trimp_daily, on=['User_ID', 'Date'], how='left')
-  else:
-      df_merged['TRIMP_Objective_scaled'] = 0.0
-
-  df_merged['TRIMP_Objective_scaled'] = df_merged['TRIMP_Objective_scaled'].fillna(0.0)
+#TRIMP Objective scaled from mart
+  df_merged = df_merged.merge(
+    mart[['User_ID', 'Date', 'trimp_objective_scaled']].rename(
+        columns={'trimp_objective_scaled': 'TRIMP_Objective_scaled'}
+    ),
+    on=['User_ID', 'Date'],
+    how='left'
+)
 
   # load discrepancy for day with sRPE
   df_merged['Load_Discrepancy'] = np.where(
