@@ -18,6 +18,14 @@ from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 import json
 
+def load_mart(path="dev.duckdb"):
+    import duckdb
+    con = duckdb.connect(path, read_only=True)
+    df = con.execute("SELECT * FROM fct_daily_readiness").df()
+    con.close()
+    df.columns = [c.lower() for c in df.columns]
+    return df
+
 def load_all_datasets(data_dir='seeds', sep=',', decimal='.'):
     csv_files = {
         'blood_biomarkers': 'blood_biomarkers.csv',
@@ -58,6 +66,10 @@ if __name__ == '__main__':
   user_profile = data['user_profile']
   workouts_log = data['workouts_log']
   discipline_weather_config = data['discipline_weather_config']
+
+  mart = load_mart()
+  mart = mart.rename(columns={'user_id': 'User_ID', 'date': 'Date'})
+  mart['Date'] = pd.to_datetime(mart['Date'])
 
   # merge dataframes
   df_merged = pd.merge(daily_metrics, user_profile, on='User_ID', how='left')
@@ -314,21 +326,13 @@ if __name__ == '__main__':
 
   df_merged['HRV_Trend_5d'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(calc_trend_slope)
 
-  # rolling baselines & relative deviations
-  df_merged['HRV_30day_Baseline'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(lambda x: x.rolling(window=30, min_periods=1).mean())
-  df_merged['Sleep_30day_Baseline'] = df_merged.groupby('User_ID')['Sleep_Duration'].transform(lambda x: x.rolling(window=30, min_periods=1).mean())
-
-  df_merged['HRV_Pct_Of_Baseline'] = df_merged['Daily_HRV'] / (df_merged['HRV_30day_Baseline'] + 1e-5)
-  df_merged['Sleep_Pct_Of_Baseline'] = df_merged['Sleep_Duration'] / (df_merged['Sleep_30day_Baseline'] + 1e-5)
-
-  df_merged['HRV_Deviation_Alert'] = np.select(
-      [
-          df_merged['HRV_ZScore_CyclAware'] < -2.0,
-          df_merged['HRV_ZScore_CyclAware'] < -1.0,
-      ],
-      ['HRV_Significant_Drop', 'HRV_Mild_Drop'],
-      default='Normal'
-  )
+  df_merged = df_merged.merge(
+        mart[['User_ID', 'Date', 'hrv_30day_baseline']].rename(
+            columns={'hrv_30day_baseline': 'HRV_30day_Baseline'}
+        ),
+        on=['User_ID', 'Date'],
+        how='left'
+    )
 
   df_merged['HRV_EWMA_7'] = df_merged.groupby('User_ID')['Daily_HRV'].transform(lambda x: x.ewm(span=7, adjust=False).mean())
 
@@ -344,67 +348,14 @@ if __name__ == '__main__':
   )
   df_merged['ACWR'] = df_merged['Acute_Load_7d'] / (df_merged['Chronic_Load_28d'] + 1e-5)
 
-  # TRIMP and load discrepancy
-  logging.info("Calculating TRIMP and Load Discrepancy...")
-
-  if 'workouts_log' in locals() and not workouts_log.empty:
-      df_workouts = workouts_log.copy()
-      df_workouts['Date'] = pd.to_datetime(df_workouts['Date'])
-
-      hr_cols_to_merge = [c for c in ['HR_Max', 'HR_Rest'] if c in df_merged.columns]
-
-      for c in hr_cols_to_merge:
-          if c in df_workouts.columns:
-              df_workouts = df_workouts.drop(columns=[c])
-
-      df_workouts = df_workouts.merge(
-          df_merged[['User_ID', 'Date'] + hr_cols_to_merge].drop_duplicates(subset=['User_ID', 'Date']),
-          on=['User_ID', 'Date'],
-          how='left'
-      )
-
-      avg_hr_col = None
-      for candidate in ['Avg_Heart_Rate', 'Avg_HR', 'Average_Heart_Rate', 'Heart_Rate_Avg', 'Avg_HeartRate']:
-          if candidate in df_workouts.columns:
-              avg_hr_col = candidate
-              break
-
-      dur_col = None
-      for candidate in ['Workout_Duration_min', 'Duration_min', 'Duration', 'Minutes']:
-          if candidate in df_workouts.columns:
-              dur_col = candidate
-              break
-
-      hr_rest = df_workouts['HR_Rest'].fillna(50.0) if 'HR_Rest' in df_workouts.columns else 50.0
-      hr_max = df_workouts['HR_Max'].fillna(190.0) if 'HR_Max' in df_workouts.columns else 190.0
-
-      if avg_hr_col:
-          avg_hr = df_workouts[avg_hr_col].fillna(hr_rest + 40.0)
-      else:
-          avg_hr = hr_rest + (hr_max - hr_rest) * 0.65
-
-      duration = df_workouts[dur_col].fillna(45.0) if dur_col else 45.0
-
-      # TRIMP
-      hr_reserve = ((avg_hr - hr_rest) / (hr_max - hr_rest + 1e-5)).clip(0.0, 1.0)
-      df_workouts['TRIMP_Objective'] = duration * hr_reserve * np.exp(1.92 * hr_reserve)
-
-      min_t, max_t = df_workouts['TRIMP_Objective'].min(), df_workouts['TRIMP_Objective'].max()
-      if max_t > min_t:
-          df_workouts['TRIMP_Objective_scaled'] = ((df_workouts['TRIMP_Objective'] - min_t) / (max_t - min_t + 1e-5)) * 1000.0
-      else:
-          df_workouts['TRIMP_Objective_scaled'] = 0.0
-
-      trimp_daily = df_workouts.groupby(['User_ID', 'Date'])['TRIMP_Objective_scaled'].sum().reset_index()
-
-      if 'TRIMP_Objective_scaled' in df_merged.columns:
-          df_merged = df_merged.drop(columns=['TRIMP_Objective_scaled'])
-
-      df_merged = df_merged.merge(trimp_daily, on=['User_ID', 'Date'], how='left')
-  else:
-      df_merged['TRIMP_Objective_scaled'] = 0.0
-
-  df_merged['TRIMP_Objective_scaled'] = df_merged['TRIMP_Objective_scaled'].fillna(0.0)
+#TRIMP Objective scaled from mart
+  df_merged = df_merged.merge(
+    mart[['User_ID', 'Date', 'trimp_objective_scaled']].rename(
+        columns={'trimp_objective_scaled': 'TRIMP_Objective_scaled'}
+    ),
+    on=['User_ID', 'Date'],
+    how='left'
+)
 
   # load discrepancy for day with sRPE
   df_merged['Load_Discrepancy'] = np.where(
@@ -417,25 +368,25 @@ if __name__ == '__main__':
   logging.info("Starting calculation of Insomnia and Sleep Architecture metrics...")
 
   if 'Deep_Sleep_h' in df_merged.columns and 'REM_Sleep_h' in df_merged.columns and 'Sleep_Duration' in df_merged.columns:
-      df_merged['Restorative_Sleep_h'] = df_merged['Deep_Sleep_h'] + df_merged['REM_Sleep_h']
-      df_merged['Restorative_Sleep_Pct'] = (df_merged['Restorative_Sleep_h'] / (df_merged['Sleep_Duration'] + 1e-5)) * 100
-      logging.info("Restorative sleep percentage successfully computed.")
+    df_merged['Restorative_Sleep_h'] = df_merged['Deep_Sleep_h'] + df_merged['REM_Sleep_h']
+    df_merged['Restorative_Sleep_Pct'] = (df_merged['Restorative_Sleep_h'] / (df_merged['Sleep_Duration'] + 1e-5)) * 100
+    logging.info("Restorative sleep percentage successfully computed.")
   else:
-      logging.warning("Sleep stage columns missing. Skipping Restorative Sleep calculation.")
+    logging.warning("Sleep stage columns missing. Skipping Restorative Sleep calculation.")
 
-  if all(col in df_merged.columns for col in ['Wake_Episodes_Count', 'Sleep_Efficiency_pct', 'Deep_Sleep_h']):
-      insomnia_conditions = [
-          (df_merged['Wake_Episodes_Count'] >= 3) & (df_merged['Sleep_Efficiency_pct'] < 80) & (df_merged['Deep_Sleep_h'] < 1.0),
-          (df_merged['Wake_Episodes_Count'] >= 2) | (df_merged['Sleep_Efficiency_pct'] < 85),
-      ]
-      insomnia_choices = ['HIGH_RISK', 'MODERATE_RISK']
-      df_merged['Insomnia_Risk_Level'] = np.select(insomnia_conditions, insomnia_choices, default='LOW_RISK')
-
-      risk_mapping = {'LOW_RISK': 0, 'MODERATE_RISK': 1, 'HIGH_RISK': 2}
-      df_merged['Insomnia_Index'] = df_merged['Insomnia_Risk_Level'].map(risk_mapping)
-      logging.info("Insomnia Risk Score and Insomnia Index successfully derived.")
-  else:
-      logging.warning("Required columns for Insomnia scoring not found.")
+  df_merged = df_merged.merge(
+    mart[['User_ID', 'Date', 'insomnia_index', 'insomnia_risk_level']].rename(
+        columns={
+            'insomnia_index': 'Insomnia_Index',
+            'insomnia_risk_level': 'Insomnia_Risk_Level',
+        }
+    ),
+    on=['User_ID', 'Date'],
+    how='left'
+)
+  df_merged['Insomnia_Index'] = df_merged['Insomnia_Index'].fillna(0)
+  df_merged['Insomnia_Risk_Level'] = df_merged['Insomnia_Risk_Level'].fillna('LOW_RISK')
+  logging.info("Insomnia metrics loaded from dbt mart.")
 
   # mental fatigue and mood disruption index
   if all(col in df_merged.columns for col in ['Subjective_Mood', 'Motivation_Level']):
@@ -458,16 +409,6 @@ if __name__ == '__main__':
   iso = IsolationForest(contamination=0.05, random_state=42)
   preds = iso.fit_predict(X_iso)
   df_merged['Anomaly_Flag'] = np.where(preds == -1, 1, 0)
-
-  # CNS load test - checking CMJ Jump and Grip Strength
-  df_merged['CMJ_Jump_cm_30day'] = df_merged.groupby('User_ID')['CMJ_Jump_cm'].transform(
-      lambda x: x.rolling(window=30, min_periods=1).mean()
-  )
-  df_merged['Grip_Strength_kg_30day'] = df_merged.groupby('User_ID')['Grip_Strength_kg'].transform(
-      lambda x: x.rolling(window=30, min_periods=1).mean()
-  )
-  df_merged['CMJ_Drop_%'] = (df_merged['CMJ_Jump_cm'] - df_merged['CMJ_Jump_cm_30day']) / df_merged['CMJ_Jump_cm_30day']
-  df_merged['Grip_Drop_%'] = (df_merged['Grip_Strength_kg'] - df_merged['Grip_Strength_kg_30day']) / df_merged['Grip_Strength_kg_30day']
 
   # CNS/neuromuscular fatigue
   def get_cns_fatigue_level(row):

@@ -2,6 +2,6 @@
 select
     User_ID,
     Date,
-    TRIMP_Objective_scaled_Daily
+    trimp_objective_scaled
 from {{ ref('int_trimp') }}
-where TRIMP_Objective_scaled_Daily < 0
+where trimp_objective_scaled < 0

@@ -50,10 +50,10 @@ scale_trimp AS (
     SELECT *,
         CASE WHEN max_t > min_t
              THEN (TRIMP_Objective - min_t) / (max_t - min_t) * 1000.0
-             ELSE 0.0 END AS TRIMP_Objective_scaled
+             ELSE 0.0 END AS trimp_objective_scaled
     FROM find_min_max
 )
 
-SELECT user_id AS User_ID, date AS Date, SUM(TRIMP_Objective_scaled) AS TRIMP_Objective_scaled_Daily
+SELECT user_id AS User_ID, date AS Date, SUM(trimp_objective_scaled) AS trimp_objective_scaled
 FROM scale_trimp
 GROUP BY user_id, date

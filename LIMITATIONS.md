@@ -11,7 +11,7 @@
   - KNN imputation is fitted on each user's full series.
   - Cycle-phase baselines and Z-scores (including the stress score) use full-history mean and standard deviation.
   - Static columns use `ffill().bfill()`, which carries future values backward.
-  - Missing HRV is filled with the global mean of the whole table (Python and dbt).
+  - Missing HRV is filled with the global mean of the whole table (Python only; dbt keeps it NULL and flags `HRV_Is_Missing`).
   - TRIMP is min-max scaled over all workouts (Python and dbt).
   - IsolationForest, PCA and KMeans are fitted on all rows.
 
@@ -19,8 +19,8 @@
 - **The target is derived from HRV.** `Target_Readiness_Tomorrow` is tomorrow's HRV ratio vs. the 30-day baseline, and HRV is also a core feature. Autocorrelation can inflate metrics, and no naive baseline ("tomorrow equals today") is reported yet.
 - **Users without sleep data are labelled low insomnia risk in Python.** The insomnia rule falls through to `LOW_RISK` / 0 when sleep inputs are missing (180 of 720 rows). dbt returns NULL for these rows.
 - **The model does not beat a naive baseline.** Mean accuracy is 0.646 and macro-F1 0.399 across `TimeSeriesSplit` folds, versus 0.687 and 0.47 for a "tomorrow equals today" rule (computed on the whole sample, so indicative only). The target is HRV-derived and highly autocorrelated, the classes are imbalanced (`High` 78.4%), and the dataset is small (720 rows, 37 `Low` days).
-- **Users without a tracker get artificial labels.** Missing HRV is replaced by a constant, so the ratio is 1 and the status is always `High`.
-- **Baseline cold start.** Rolling baselines use `min_periods=1`, so the first day equals its own baseline. The window also includes the current day.
+- **Users without a tracker get artificial labels in Python.** Missing HRV is replaced by a constant, so the ratio is 1 and the status is always `High`. In dbt the status is NULL for these days.
+- **Baseline cold start (Python).** Rolling baselines use `min_periods=1`, so the first day equals its own baseline. The window also includes the current day. In dbt the baselines exclude the current day and need at least seven prior observations, so the first days of each series are NULL.
 - **TRIMP scaling.** TRIMP is scaled per workout and then summed per day, so a day can exceed 1000. `Load_Discrepancy` compares sRPE with scaled TRIMP, and the two scales are not calibrated against each other.
 - **Heuristic thresholds.** HRV ratios (0.85 / 0.95), CMJ and grip drops, and insomnia rules are heuristic choices, not validated cut-offs.
 - **Experience is used only for discipline swaps.** Years of experience choose the alternative discipline but do not scale the load metrics.
@@ -37,8 +37,9 @@
 - **Latest day only.** The forecast (daytime window 08:00–20:00) is applied only to the latest date in the data. It is a safety gate on the final recommendation, not a model feature.
 
 ## Architecture
-- **Python and dbt are not integrated.** The Python pipeline does not read the dbt marts, and there is no orchestration between the two.
-- **Python and dbt outputs differ.** Differences come from imputation vs. NULLs, the CNS fallback layer, CMJ/grip baselines, the HR lookup in TRIMP, and division guards (see case study, section 7).
+- **Integration is partial.** The Python pipeline reads the dbt mart through `load_mart()` for the logic dbt already implements. Everything specific to ML (imputation, cycle-aware baselines, EWMA/ACWR, Z-scores, anomaly detection, the model) is still computed in Python, so the Python-side limitations above apply to those features.
+- **No orchestration tool.** `run_pipeline.py` runs the steps in sequence and stops at the first failure, but there is no scheduler, retry logic or run history (no Prefect, Dagster or Airflow).
+- **Python and dbt outputs differ.** Where Python still computes a feature itself, differences come from imputation vs. NULLs, the CNS fallback layer, CMJ/grip baselines, the HR lookup in TRIMP, the baseline definition (current day, minimum observations) and division guards (see case study, section 7).
 - **dbt SQL is DuckDB-specific** (`ASOF JOIN`, `generate_series` with `unnest`, `LEAST`/`GREATEST` NULL behavior) and is not portable 1:1 to other warehouses.
-- **CI covers dbt and the unit tests only.** GitHub Actions runs `dbt build` and `pytest`. The full Python pipeline and the parity report are not part of CI, because the pipeline calls external weather APIs and its output depends on the day of the run.
+- **CI covers dbt and the unit tests only.** GitHub Actions runs `dbt build` and `pytest`. The full Python pipeline, `run_pipeline.py` and the parity report are not part of CI, because the pipeline calls external weather APIs and its output depends on the day of the run.
 - **Single-script Python architecture.** The pipeline is organized into functions but lives in one file, not a Python package.
