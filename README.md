@@ -14,16 +14,16 @@ The thought process, design decisions, and the problems I ran into (including da
 
 ## Architecture
 
-The project has two layers that currently run side by side:
+The project has two layers that work together:
 
 | Layer | What it does |
 |-------|--------------|
 | **Python** (`athlete_analytics_project.py`) | Complete pipeline and source of truth for the ML model: imputation, cycle-aware baselines, EWMA/ACWR, Z-scores, anomaly detection, Random Forest, SHAP, weather gate, recommendation engine |
-| **dbt + DuckDB** (`models/`) | SQL reimplementation of the logic that fits SQL: calendar spine, rolling baselines, TRIMP, rule-based business logic |
+| **dbt + DuckDB** (`models/`) | The logic that fits SQL: calendar spine, rolling baselines, TRIMP, rule-based business logic. Its mart `fct_daily_readiness` is read by the Python pipeline |
 
-The Python pipeline does **not** read the dbt outputs yet. dbt serves as a reference implementation I compare against Python. Known differences between the two are documented in the case study (section 7).
+The Python pipeline reads the dbt mart (`fct_daily_readiness`, through `load_mart()`) for the logic dbt already implements, and computes in Python only what is specific to ML (imputation, cycle-aware baselines, EWMA/ACWR, Z-scores, anomaly detection, the model, the weather gate and the recommendation engine). `run_pipeline.py` runs the steps in order: `dbt seed`, `dbt build`, the Python pipeline and the parity report. The comparison between the original, independent implementations is documented in the case study (section 7).
 
-![dbt lineage](docs/dbt_lineage_graph.png)
+![dbt lineage](docs/lineage.png)
 
 ### Python: core vs. optional modules
 
@@ -80,9 +80,17 @@ The datasets are already in `seeds/`, so no extra files are needed.
 
 ## Usage
 
+### Run everything
+
+```sh
+python run_pipeline.py
+```
+
+Runs `dbt seed`, `dbt build`, the Python pipeline and `compare_report.py` in order and stops at the first failing step. Run it locally rather than in a hosted notebook (e.g. Google Colab): the weather module geolocates from the IP of the machine running the script, so a hosted server gives the wrong location.
+
 ### Python pipeline
 
-Run it locally rather than in a hosted notebook (e.g. Google Colab): the weather module geolocates from the IP of the machine running the script, so a hosted server gives the wrong location.
+The Python pipeline reads the dbt mart from `dev.duckdb`, so run `dbt build` first (or use `run_pipeline.py`).
 
 ```sh
 python athlete_analytics_project.py
@@ -92,7 +100,7 @@ Outputs:
 - `fct_daily_readiness.csv`: enriched daily dataset for BI tools or ad-hoc analysis
 - `readiness_model_v1.pkl`: trained model pipeline (preprocessing + classifier)
 
-Note: the dbt mart `fct_daily_readiness` (built from `int_trimp` and `int_business_logic`, stored in DuckDB) and the CSV with the same name produced by Python are two independent implementations. Their comparison is described in the case study.
+Note: the dbt mart `fct_daily_readiness` (stored in DuckDB) is the input of the Python pipeline, and the CSV with the same name is its enriched output. `compare_report.py` compares them column by column (see Testing).
 
 ### dbt
 
@@ -144,6 +152,14 @@ dbt test    # runs tests only
 | `assert_target_matches_next_day_status` | `Target_Readiness_Tomorrow` equals the next day's `Readiness_Status_Today` |
 | `assert_trimp_is_non_negative` | Scaled daily TRIMP is never negative |
 
+**Unit tests (dbt)**
+
+Three tests in the `unit_tests:` section of `models/intermediate/intermediate_models.yml` check the readiness-status rule on hand-made rows: an HRV ratio below the threshold is `Low`, above it `High`, and a missing baseline gives NULL.
+
+```sh
+dbt test --select test_type:unit
+```
+
 ### Python vs. dbt parity report
 
 `compare_report.py` is not a pass/fail test. It compares the dbt mart with the Python output column by column and reports the share of differing values, NULL mismatches and absolute differences. It is not part of the CI because it needs the Python output, which depends on live weather data.
@@ -152,7 +168,7 @@ dbt test    # runs tests only
 python compare_report.py parity_report_before.csv   # the output file name is optional
 ```
 
-The baseline result is stored in `parity_report_before.csv`. Results and their causes are described in the [case study](case_study.md), section 7.
+The baseline result is stored in `parity_report_before.csv` and the re-measurement after the methodology fixes in `parity_report_after.csv`. Results and their causes are described in the [case study](case_study.md), section 7.
 
 ## Status & Further Documentation
 
