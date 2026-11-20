@@ -368,25 +368,25 @@ if __name__ == '__main__':
   logging.info("Starting calculation of Insomnia and Sleep Architecture metrics...")
 
   if 'Deep_Sleep_h' in df_merged.columns and 'REM_Sleep_h' in df_merged.columns and 'Sleep_Duration' in df_merged.columns:
-      df_merged['Restorative_Sleep_h'] = df_merged['Deep_Sleep_h'] + df_merged['REM_Sleep_h']
-      df_merged['Restorative_Sleep_Pct'] = (df_merged['Restorative_Sleep_h'] / (df_merged['Sleep_Duration'] + 1e-5)) * 100
-      logging.info("Restorative sleep percentage successfully computed.")
+    df_merged['Restorative_Sleep_h'] = df_merged['Deep_Sleep_h'] + df_merged['REM_Sleep_h']
+    df_merged['Restorative_Sleep_Pct'] = (df_merged['Restorative_Sleep_h'] / (df_merged['Sleep_Duration'] + 1e-5)) * 100
+    logging.info("Restorative sleep percentage successfully computed.")
   else:
-      logging.warning("Sleep stage columns missing. Skipping Restorative Sleep calculation.")
+    logging.warning("Sleep stage columns missing. Skipping Restorative Sleep calculation.")
 
-  if all(col in df_merged.columns for col in ['Wake_Episodes_Count', 'Sleep_Efficiency_pct', 'Deep_Sleep_h']):
-      insomnia_conditions = [
-          (df_merged['Wake_Episodes_Count'] >= 3) & (df_merged['Sleep_Efficiency_pct'] < 80) & (df_merged['Deep_Sleep_h'] < 1.0),
-          (df_merged['Wake_Episodes_Count'] >= 2) | (df_merged['Sleep_Efficiency_pct'] < 85),
-      ]
-      insomnia_choices = ['HIGH_RISK', 'MODERATE_RISK']
-      df_merged['Insomnia_Risk_Level'] = np.select(insomnia_conditions, insomnia_choices, default='LOW_RISK')
-
-      risk_mapping = {'LOW_RISK': 0, 'MODERATE_RISK': 1, 'HIGH_RISK': 2}
-      df_merged['Insomnia_Index'] = df_merged['Insomnia_Risk_Level'].map(risk_mapping)
-      logging.info("Insomnia Risk Score and Insomnia Index successfully derived.")
-  else:
-      logging.warning("Required columns for Insomnia scoring not found.")
+  df_merged = df_merged.merge(
+    mart[['User_ID', 'Date', 'insomnia_index', 'insomnia_risk_level']].rename(
+        columns={
+            'insomnia_index': 'Insomnia_Index',
+            'insomnia_risk_level': 'Insomnia_Risk_Level',
+        }
+    ),
+    on=['User_ID', 'Date'],
+    how='left'
+)
+  df_merged['Insomnia_Index'] = df_merged['Insomnia_Index'].fillna(0)
+  df_merged['Insomnia_Risk_Level'] = df_merged['Insomnia_Risk_Level'].fillna('LOW_RISK')
+  logging.info("Insomnia metrics loaded from dbt mart.")
 
   # mental fatigue and mood disruption index
   if all(col in df_merged.columns for col in ['Subjective_Mood', 'Motivation_Level']):
